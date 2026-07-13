@@ -43,6 +43,8 @@ const ClockIn = ({ user, show }) => {
       ? "warn"
       : "danger";
 
+  const canClockOut = now.getHours() >= 17;
+
   const doClockIn = async () => {
     // Enforces geofence and one-clock-in-per-day before writing attendance.
     if (!withinRange) {
@@ -80,6 +82,10 @@ const ClockIn = ({ user, show }) => {
     }
     if (clockedToday.clockOutTime) {
       show("You have already clocked out today.", "error");
+      return;
+    }
+    if (!canClockOut) {
+      show("Clock out is only available from 5:00 PM.", "error");
       return;
     }
     const clockOutTime = new Date().toISOString();
@@ -213,10 +219,12 @@ const ClockIn = ({ user, show }) => {
               <button
                 className="btn-clock-in"
                 onClick={doClockOut}
-                disabled={!withinRange || gps.status !== "ok"}
+                disabled={!withinRange || gps.status !== "ok" || !canClockOut}
               >
                 {gps.status === "loading"
                   ? "⏳ Getting location…"
+                  : !canClockOut
+                  ? "🕔 Available at 5:00 PM"
                   : withinRange
                   ? "⏻ Clock Out Now"
                   : "✕ Outside Range"}
