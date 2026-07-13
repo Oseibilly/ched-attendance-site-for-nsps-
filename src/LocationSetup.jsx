@@ -103,7 +103,7 @@ const LocationSetup = ({ show }) => {
         </div>
       )}
 
-      {!editing ? (
+      {loc && !editing ? (
         <div className="card">
           <div className="card-title">Location Locked</div>
           <div style={{ fontSize: 14, color: "var(--brown-500)", marginBottom: 20 }}>
