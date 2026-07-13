@@ -154,9 +154,9 @@ const LocationSetup = ({ show }) => {
             <div className="radius-input-wrap">
               <input
                 type="range"
-                min="50"
+                min="5"
                 max="1000"
-                step="25"
+                step="5"
                 value={radius}
                 onChange={(e) => setRadius(Number(e.target.value))}
                 style={{ flex: 1, accentColor: "var(--brown-600)" }}
