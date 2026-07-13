@@ -8,6 +8,7 @@ const LocationSetup = ({ show }) => {
   const [name, setName] = useState("");
   const [gpsLoading, setGpsLoading] = useState(false);
   const [pending, setPending] = useState(null);
+  const [accuracy, setAccuracy] = useState(null);
   // A saved location is locked (read-only) until the admin explicitly
   // chooses to update it, so casually revisiting this page can never
   // silently overwrite the real work location.
@@ -20,6 +21,7 @@ const LocationSetup = ({ show }) => {
         setRadius(l.radius);
         setName(l.name);
         setPending({ lat: l.lat, lng: l.lng });
+        setAccuracy(l.accuracy ?? null);
         setEditing(false);
       } else {
         setEditing(true);
@@ -32,6 +34,7 @@ const LocationSetup = ({ show }) => {
     setPending(loc ? { lat: loc.lat, lng: loc.lng } : null);
     setName(loc?.name || "");
     setRadius(loc?.radius || 200);
+    setAccuracy(loc?.accuracy ?? null);
     setEditing(true);
   };
 
@@ -39,6 +42,7 @@ const LocationSetup = ({ show }) => {
     setPending(loc ? { lat: loc.lat, lng: loc.lng } : null);
     setName(loc?.name || "");
     setRadius(loc?.radius || 200);
+    setAccuracy(loc?.accuracy ?? null);
     setEditing(false);
   };
 
@@ -48,6 +52,7 @@ const LocationSetup = ({ show }) => {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setPending({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setAccuracy(Math.round(pos.coords.accuracy));
         setGpsLoading(false);
         show("Location captured.", "success");
       },
@@ -63,7 +68,7 @@ const LocationSetup = ({ show }) => {
     // Persists selected coordinates, radius, and location label.
     if (!pending) { show("Capture a GPS location first.", "error"); return; }
     if (!name.trim()) { show("Enter a location name.", "error"); return; }
-    const data = { lat: pending.lat, lng: pending.lng, radius, name: name.trim() };
+    const data = { lat: pending.lat, lng: pending.lng, radius, name: name.trim(), accuracy };
     await DB.set("aiq_location", data);
     setLoc(data);
     setEditing(false);
@@ -76,6 +81,7 @@ const LocationSetup = ({ show }) => {
     setPending(null);
     setName("");
     setRadius(200);
+    setAccuracy(null);
     setEditing(true);
     show("Location cleared.", "info");
   };
@@ -93,6 +99,7 @@ const LocationSetup = ({ show }) => {
         <div className="alert alert-success" style={{ marginBottom: 24 }}>
           ✓ Location active: <strong>{loc.name}</strong> — {loc.radius}m radius
           around ({loc.lat.toFixed(5)}, {loc.lng.toFixed(5)})
+          {loc.accuracy != null && ` · captured to within ±${loc.accuracy}m`}
         </div>
       )}
 
@@ -103,6 +110,14 @@ const LocationSetup = ({ show }) => {
             This location stays fixed until you choose to update it — no one
             can change it by accident.
           </div>
+          <a
+            href={`https://www.google.com/maps?q=${loc.lat},${loc.lng}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ fontSize: 13, color: "var(--brown-600)", textDecoration: "underline", display: "inline-block", marginBottom: 20 }}
+          >
+            🗺 View this exact point on Google Maps
+          </a>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <button className="btn btn-gold" onClick={startEdit}>
               ✎ Update Location
@@ -127,7 +142,16 @@ const LocationSetup = ({ show }) => {
                 </span>
                 <span style={{ fontSize: 12, color: "var(--brown-500)" }}>
                   Radius: {radius}m
+                  {accuracy != null && ` · GPS accuracy: ±${accuracy}m`}
                 </span>
+                <a
+                  href={`https://www.google.com/maps?q=${pending.lat},${pending.lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontSize: 12, color: "var(--brown-600)", textDecoration: "underline" }}
+                >
+                  🗺 View on Google Maps
+                </a>
               </>
             ) : (
               <>
