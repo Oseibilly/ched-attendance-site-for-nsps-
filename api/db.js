@@ -1,4 +1,5 @@
-import { Pool } from "pg";
+import pg from "pg";
+const { Pool } = pg;
 
 const ALLOWED_KEYS = new Set(["aiq_users", "aiq_attendance", "aiq_location"]);
 
@@ -26,29 +27,34 @@ const ensureSchema = () => {
 };
 
 export default async function handler(req, res) {
-  const key = req.method === "GET" ? req.query.key : req.body?.key;
-  if (!ALLOWED_KEYS.has(key)) {
-    res.status(400).json({ error: "Unknown key" });
-    return;
+  try {
+    const key = req.method === "GET" ? req.query.key : req.body?.key;
+    if (!ALLOWED_KEYS.has(key)) {
+      res.status(400).json({ error: "Unknown key" });
+      return;
+    }
+
+    await ensureSchema();
+
+    if (req.method === "GET") {
+      const { rows } = await pool.query("SELECT value FROM kv WHERE key = $1", [key]);
+      res.status(200).json({ value: rows[0]?.value ?? null });
+      return;
+    }
+
+    if (req.method === "POST") {
+      await pool.query(
+        `INSERT INTO kv (key, value) VALUES ($1, $2)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        [key, JSON.stringify(req.body.value)]
+      );
+      res.status(200).json({ ok: true });
+      return;
+    }
+
+    res.status(405).json({ error: "Method not allowed" });
+  } catch (err) {
+    schemaReady = null;
+    res.status(500).json({ error: err.message });
   }
-
-  await ensureSchema();
-
-  if (req.method === "GET") {
-    const { rows } = await pool.query("SELECT value FROM kv WHERE key = $1", [key]);
-    res.status(200).json({ value: rows[0]?.value ?? null });
-    return;
-  }
-
-  if (req.method === "POST") {
-    await pool.query(
-      `INSERT INTO kv (key, value) VALUES ($1, $2)
-       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
-      [key, JSON.stringify(req.body.value)]
-    );
-    res.status(200).json({ ok: true });
-    return;
-  }
-
-  res.status(405).json({ error: "Method not allowed" });
 }
