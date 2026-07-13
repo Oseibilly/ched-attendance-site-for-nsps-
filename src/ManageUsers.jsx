@@ -24,6 +24,9 @@ const ManageUsers = ({ show, currentUser }) => {
   const [err, setErr] = useState("");
   const [delConfirm, setDelConfirm] = useState(null);
   const [sending, setSending] = useState(false);
+  const [editUser, setEditUser] = useState(null);
+  const [editForm, setEditForm] = useState(null);
+  const [editErr, setEditErr] = useState("");
 
   const add = async () => {
     // Creates a new employee/admin record and updates persistent storage.
@@ -72,6 +75,37 @@ const ManageUsers = ({ show, currentUser }) => {
     show("User removed.", "info");
   };
 
+  const openEdit = (u) => {
+    setEditErr("");
+    setEditForm({ name: u.name, email: u.email, password: u.password, role: u.role, department: u.department || "" });
+    setEditUser(u);
+  };
+
+  const saveEdit = async () => {
+    setEditErr("");
+    const name = editForm.name.trim();
+    const email = editForm.email.trim().toLowerCase();
+    const password = editForm.password;
+    const department = editForm.department.trim();
+    if (!name || !email || !password) {
+      setEditErr("All fields required.");
+      return;
+    }
+    if (users.find((u) => u.id !== editUser.id && u.email.toLowerCase() === email)) {
+      setEditErr("Email already exists.");
+      return;
+    }
+    const updated = users.map((u) =>
+      u.id === editUser.id
+        ? { ...u, name, email, password, role: editForm.role, department, avatar: initials(name) }
+        : u
+    );
+    await DB.set("aiq_users", updated);
+    setUsers(updated);
+    setEditUser(null);
+    show("Employee updated successfully.", "success");
+  };
+
   const avatarColors = ["#6B4226", "#8B5A35", "#A67C52", "#4A2E1A", "#C4A882"];
 
   return (
@@ -111,7 +145,7 @@ const ManageUsers = ({ show, currentUser }) => {
             </thead>
             <tbody>
               {users.map((u, i) => (
-                <tr key={u.id}>
+                <tr key={u.id} onClick={() => openEdit(u)} style={{ cursor: "pointer" }}>
                   <td>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <div
@@ -130,7 +164,7 @@ const ManageUsers = ({ show, currentUser }) => {
                       {u.role}
                     </span>
                   </td>
-                  <td>
+                  <td onClick={(e) => e.stopPropagation()}>
                     {u.id !== currentUser.id && (
                       <button
                         className="btn btn-danger btn-sm"
@@ -214,6 +248,81 @@ const ManageUsers = ({ show, currentUser }) => {
               <button className="btn btn-primary" onClick={add}>
                 Add Employee
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editUser && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-title">Employee Details</div>
+            <div className="modal-sub">View and update this team member's account.</div>
+            {editErr && <div className="alert alert-error">{editErr}</div>}
+            <div className="form-group">
+              <label className="form-label">Full Name</label>
+              <input
+                className="form-input"
+                value={editForm.name}
+                onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Email</label>
+              <input
+                className="form-input"
+                type="email"
+                value={editForm.email}
+                onChange={(e) => setEditForm((p) => ({ ...p, email: e.target.value }))}
+              />
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Department</label>
+                <input
+                  className="form-input"
+                  value={editForm.department}
+                  onChange={(e) => setEditForm((p) => ({ ...p, department: e.target.value }))}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Role</label>
+                <select
+                  className="form-input"
+                  value={editForm.role}
+                  onChange={(e) => setEditForm((p) => ({ ...p, role: e.target.value }))}
+                >
+                  <option value="employee">Employee</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Password</label>
+              <input
+                className="form-input"
+                type="text"
+                value={editForm.password}
+                onChange={(e) => setEditForm((p) => ({ ...p, password: e.target.value }))}
+              />
+            </div>
+            <div className="modal-actions" style={{ justifyContent: "space-between" }}>
+              {editUser.id !== currentUser.id ? (
+                <button
+                  className="btn btn-danger btn-sm"
+                  onClick={() => { setDelConfirm(editUser.id); setEditUser(null); }}
+                >
+                  Remove User
+                </button>
+              ) : <span />}
+              <div style={{ display: "flex", gap: 12 }}>
+                <button className="btn btn-ghost" onClick={() => setEditUser(null)}>
+                  Cancel
+                </button>
+                <button className="btn btn-primary" onClick={saveEdit}>
+                  Save Changes
+                </button>
+              </div>
             </div>
           </div>
         </div>
