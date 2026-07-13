@@ -8,6 +8,10 @@ const LocationSetup = ({ show }) => {
   const [name, setName] = useState("");
   const [gpsLoading, setGpsLoading] = useState(false);
   const [pending, setPending] = useState(null);
+  // A saved location is locked (read-only) until the admin explicitly
+  // chooses to update it, so casually revisiting this page can never
+  // silently overwrite the real work location.
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     DB.get("aiq_location").then((l) => {
@@ -16,9 +20,27 @@ const LocationSetup = ({ show }) => {
         setRadius(l.radius);
         setName(l.name);
         setPending({ lat: l.lat, lng: l.lng });
+        setEditing(false);
+      } else {
+        setEditing(true);
       }
     });
   }, []);
+
+  const startEdit = () => {
+    // Re-enter edit mode without touching the currently saved coordinates.
+    setPending(loc ? { lat: loc.lat, lng: loc.lng } : null);
+    setName(loc?.name || "");
+    setRadius(loc?.radius || 200);
+    setEditing(true);
+  };
+
+  const cancelEdit = () => {
+    setPending(loc ? { lat: loc.lat, lng: loc.lng } : null);
+    setName(loc?.name || "");
+    setRadius(loc?.radius || 200);
+    setEditing(false);
+  };
 
   const captureGPS = () => {
     // Captures current admin location to define the office geofence center.
@@ -44,6 +66,7 @@ const LocationSetup = ({ show }) => {
     const data = { lat: pending.lat, lng: pending.lng, radius, name: name.trim() };
     await DB.set("aiq_location", data);
     setLoc(data);
+    setEditing(false);
     show("Work location saved successfully!", "success");
   };
 
@@ -51,6 +74,9 @@ const LocationSetup = ({ show }) => {
     await DB.set("aiq_location", null);
     setLoc(null);
     setPending(null);
+    setName("");
+    setRadius(200);
+    setEditing(true);
     show("Location cleared.", "info");
   };
 
@@ -70,75 +96,93 @@ const LocationSetup = ({ show }) => {
         </div>
       )}
 
-      <div className="card">
-        <div className="card-title">Configure Location</div>
-        <div className={`loc-map-mock ${pending ? "loc-map-active" : ""}`}>
-          {pending ? (
-            <>
-              <span style={{ fontSize: 36 }}>📍</span>
-              <span style={{ fontSize: 14, color: "var(--success)", fontWeight: 600 }}>
-                {name || "Work Location"}
-              </span>
-              <span className="loc-coords">
-                Lat: {pending.lat.toFixed(6)} · Lng: {pending.lng.toFixed(6)}
-              </span>
-              <span style={{ fontSize: 12, color: "var(--brown-500)" }}>
-                Radius: {radius}m
-              </span>
-            </>
-          ) : (
-            <>
-              <span style={{ fontSize: 36, opacity: 0.4 }}>🗺</span>
-              <span style={{ color: "var(--brown-400)", fontSize: 14 }}>
-                No location set — use the button below to capture GPS
-              </span>
-            </>
-          )}
-        </div>
-
-        <div className="form-group">
-          <label className="form-label">Location Name</label>
-          <input
-            className="form-input"
-            placeholder="e.g. Head Office, Warehouse A"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </div>
-
-        <div className="form-group">
-          <label className="form-label">Allowed Radius</label>
-          <div className="radius-input-wrap">
-            <input
-              type="range"
-              min="50"
-              max="1000"
-              step="25"
-              value={radius}
-              onChange={(e) => setRadius(Number(e.target.value))}
-              style={{ flex: 1, accentColor: "var(--brown-600)" }}
-            />
-            <div className="radius-display">{radius}m</div>
+      {!editing ? (
+        <div className="card">
+          <div className="card-title">Location Locked</div>
+          <div style={{ fontSize: 14, color: "var(--brown-500)", marginBottom: 20 }}>
+            This location stays fixed until you choose to update it — no one
+            can change it by accident.
           </div>
-          <div style={{ fontSize: 12, color: "var(--brown-400)", marginTop: 6 }}>
-            Employees must be within {radius} meters of this point to clock in.
-          </div>
-        </div>
-
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <button className="btn btn-gold" onClick={captureGPS} disabled={gpsLoading}>
-            {gpsLoading ? "⏳ Capturing…" : "📍 Capture Current GPS"}
-          </button>
-          <button className="btn btn-primary" onClick={save} disabled={!pending}>
-            Save Location
-          </button>
-          {loc && (
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <button className="btn btn-gold" onClick={startEdit}>
+              ✎ Update Location
+            </button>
             <button className="btn btn-danger btn-sm" onClick={clear}>
               Clear Location
             </button>
-          )}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="card">
+          <div className="card-title">Configure Location</div>
+          <div className={`loc-map-mock ${pending ? "loc-map-active" : ""}`}>
+            {pending ? (
+              <>
+                <span style={{ fontSize: 36 }}>📍</span>
+                <span style={{ fontSize: 14, color: "var(--success)", fontWeight: 600 }}>
+                  {name || "Work Location"}
+                </span>
+                <span className="loc-coords">
+                  Lat: {pending.lat.toFixed(6)} · Lng: {pending.lng.toFixed(6)}
+                </span>
+                <span style={{ fontSize: 12, color: "var(--brown-500)" }}>
+                  Radius: {radius}m
+                </span>
+              </>
+            ) : (
+              <>
+                <span style={{ fontSize: 36, opacity: 0.4 }}>🗺</span>
+                <span style={{ color: "var(--brown-400)", fontSize: 14 }}>
+                  No location set — use the button below to capture GPS
+                </span>
+              </>
+            )}
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Location Name</label>
+            <input
+              className="form-input"
+              placeholder="e.g. Head Office, Warehouse A"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Allowed Radius</label>
+            <div className="radius-input-wrap">
+              <input
+                type="range"
+                min="50"
+                max="1000"
+                step="25"
+                value={radius}
+                onChange={(e) => setRadius(Number(e.target.value))}
+                style={{ flex: 1, accentColor: "var(--brown-600)" }}
+              />
+              <div className="radius-display">{radius}m</div>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--brown-400)", marginTop: 6 }}>
+              Employees must be within {radius} meters of this point to clock in.
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <button className="btn btn-gold" onClick={captureGPS} disabled={gpsLoading}>
+              {gpsLoading ? "⏳ Capturing…" : "📍 Capture Current GPS"}
+            </button>
+            <button className="btn btn-primary" onClick={save} disabled={!pending}>
+              Save Location
+            </button>
+            {loc && (
+              <button className="btn btn-ghost" onClick={cancelEdit}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
