@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DB } from "./db";
 import { getDistance, formatDate, formatTime, uid } from "./helpers";
 import { useClock, useGPS } from "./index";
@@ -7,8 +7,14 @@ import { useClock, useGPS } from "./index";
 const ClockIn = ({ user, show }) => {
   const now = useClock();
   const gps = useGPS();
-  const workLoc = DB.get("aiq_location");
-  const [allAttendance, setAllAttendance] = useState(() => DB.get("aiq_attendance") || []);
+  const [workLoc, setWorkLoc] = useState(null);
+  const [allAttendance, setAllAttendance] = useState([]);
+
+  useEffect(() => {
+    DB.get("aiq_location").then(setWorkLoc);
+    DB.get("aiq_attendance").then((a) => setAllAttendance(a || []));
+  }, []);
+
   const attendance = allAttendance.filter((a) => a.userId === user.id);
   const todayStr = now.toDateString();
   const clockedToday = attendance.find(
@@ -37,7 +43,7 @@ const ClockIn = ({ user, show }) => {
       ? "warn"
       : "danger";
 
-  const doClockIn = () => {
+  const doClockIn = async () => {
     // Enforces geofence and one-clock-in-per-day before writing attendance.
     if (!withinRange) {
       show("You are not within the registered work location.", "error");
@@ -58,12 +64,12 @@ const ClockIn = ({ user, show }) => {
       distance,
     };
     const updated = [...allAttendance, record];
-    DB.set("aiq_attendance", updated);
+    await DB.set("aiq_attendance", updated);
     setAllAttendance(updated);
     show(`✓ Attendance recorded at ${formatTime(record.time)}`, "success");
   };
 
-  const doClockOut = () => {
+  const doClockOut = async () => {
     if (!withinRange) {
       show("You are not within the registered work location.", "error");
       return;
@@ -82,7 +88,7 @@ const ClockIn = ({ user, show }) => {
         ? { ...a, clockOutTime, clockOutLat: gps.lat, clockOutLng: gps.lng, clockOutDistance: distance }
         : a
     );
-    DB.set("aiq_attendance", updated);
+    await DB.set("aiq_attendance", updated);
     setAllAttendance(updated);
     show(`✓ Clocked out at ${formatTime(clockOutTime)}`, "success");
   };

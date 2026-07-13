@@ -1,13 +1,24 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DB } from "./db";
 
 // ─── Admin: Location Setup ─────────────────────────────────────────────────
 const LocationSetup = ({ show }) => {
-  const [loc, setLoc] = useState(DB.get("aiq_location") || null);
-  const [radius, setRadius] = useState(loc?.radius || 200);
-  const [name, setName] = useState(loc?.name || "");
+  const [loc, setLoc] = useState(null);
+  const [radius, setRadius] = useState(200);
+  const [name, setName] = useState("");
   const [gpsLoading, setGpsLoading] = useState(false);
-  const [pending, setPending] = useState(loc ? { lat: loc.lat, lng: loc.lng } : null);
+  const [pending, setPending] = useState(null);
+
+  useEffect(() => {
+    DB.get("aiq_location").then((l) => {
+      if (l) {
+        setLoc(l);
+        setRadius(l.radius);
+        setName(l.name);
+        setPending({ lat: l.lat, lng: l.lng });
+      }
+    });
+  }, []);
 
   const captureGPS = () => {
     // Captures current admin location to define the office geofence center.
@@ -26,18 +37,18 @@ const LocationSetup = ({ show }) => {
     );
   };
 
-  const save = () => {
+  const save = async () => {
     // Persists selected coordinates, radius, and location label.
     if (!pending) { show("Capture a GPS location first.", "error"); return; }
     if (!name.trim()) { show("Enter a location name.", "error"); return; }
     const data = { lat: pending.lat, lng: pending.lng, radius, name: name.trim() };
-    DB.set("aiq_location", data);
+    await DB.set("aiq_location", data);
     setLoc(data);
     show("Work location saved successfully!", "success");
   };
 
-  const clear = () => {
-    DB.set("aiq_location", null);
+  const clear = async () => {
+    await DB.set("aiq_location", null);
     setLoc(null);
     setPending(null);
     show("Location cleared.", "info");

@@ -1,4 +1,5 @@
-// Lightweight local-database API (reads/writes persisted keys like attendance lists).
+import { useState, useEffect } from "react";
+// Lightweight shared-database API (reads/writes persisted keys like attendance lists).
 import { DB } from "./db";
 // Human-readable date/time strings and initials for avatar placeholders.
 import { formatDate, formatTime, initials } from "./helpers";
@@ -10,11 +11,18 @@ import { useClock } from "./index";
 // plus a table of who clocked in today (sorted by time).
 const AdminDashboard = () => {
   // All attendance log entries ever stored (array); default to [] if nothing saved yet.
-  const logs = DB.get("aiq_attendance") || [];
+  const [logs, setLogs] = useState([]);
   // All user accounts; used to count how many employees exist.
-  const users = DB.get("aiq_users") || [];
+  const [users, setUsers] = useState([]);
   // Single saved workplace GPS/config blob; required before employees can clock in.
-  const loc = DB.get("aiq_location");
+  const [loc, setLoc] = useState(null);
+
+  useEffect(() => {
+    DB.get("aiq_attendance").then((a) => setLogs(a || []));
+    DB.get("aiq_users").then((u) => setUsers(u || []));
+    DB.get("aiq_location").then(setLoc);
+  }, []);
+
   // Keep only logs whose timestamp falls on today’s calendar date (local timezone).
   const todayLogs = logs.filter(
     (l) => new Date(l.time).toDateString() === new Date().toDateString()

@@ -13,8 +13,8 @@ const LoginPage = ({ onLogin, onSwitch }) => {
     setLoading(true);
     // Simulates async auth and validates credentials from stored users.
     const email = form.email.trim().toLowerCase();
-    setTimeout(() => {
-      const users = DB.get("aiq_users") || [];
+    setTimeout(async () => {
+      const users = (await DB.get("aiq_users")) || [];
       const user = users.find(
         (u) => u.email.toLowerCase() === email && u.password === form.password
       );

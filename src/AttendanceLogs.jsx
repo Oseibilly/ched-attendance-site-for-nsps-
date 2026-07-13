@@ -1,13 +1,21 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DB } from "./db";
 import { formatDate, formatTime, initials } from "./helpers";
 
 // ─── Admin: Attendance Logs ────────────────────────────────────────────────
 const AttendanceLogs = () => {
-  const [logs, setLogs] = useState(DB.get("aiq_attendance") || []);
+  const [logs, setLogs] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [location, setLocation] = useState(null);
   const [search, setSearch] = useState("");
   const [dateFilter, setDateFilter] = useState("");
   const [confirm, setConfirm] = useState(null);
+
+  useEffect(() => {
+    DB.get("aiq_attendance").then((a) => setLogs(a || []));
+    DB.get("aiq_users").then((u) => setUsers(u || []));
+    DB.get("aiq_location").then(setLocation);
+  }, []);
 
   const filtered = logs
     .filter((l) => {
@@ -22,9 +30,9 @@ const AttendanceLogs = () => {
     })
     .sort((a, b) => new Date(b.time) - new Date(a.time));
 
-  const del = (id) => {
+  const del = async (id) => {
     const updated = logs.filter((l) => l.id !== id);
-    DB.set("aiq_attendance", updated);
+    await DB.set("aiq_attendance", updated);
     setLogs(updated);
     setConfirm(null);
   };
@@ -32,7 +40,6 @@ const AttendanceLogs = () => {
   const todayCount = logs.filter(
     (l) => new Date(l.time).toDateString() === new Date().toDateString()
   ).length;
-  const users = DB.get("aiq_users") || [];
   const empCount = users.filter((u) => u.role === "employee").length;
 
   return (
@@ -62,7 +69,7 @@ const AttendanceLogs = () => {
         <div className="stat-card">
           <div className="stat-icon">📍</div>
           <div className="stat-val">
-            {DB.get("aiq_location") ? "Active" : "None"}
+            {location ? "Active" : "None"}
           </div>
           <div className="stat-label">Work Location</div>
         </div>

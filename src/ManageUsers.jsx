@@ -1,11 +1,19 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DB } from "./db";
 import { uid, initials } from "./helpers";
 
 // ─── Admin: Manage Users ────────────────────────────────────────────────────
 const ManageUsers = ({ show, currentUser }) => {
-  const [users, setUsers] = useState(DB.get("aiq_users") || []);
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+
+  useEffect(() => {
+    DB.get("aiq_users").then((u) => {
+      setUsers(u || []);
+      setLoading(false);
+    });
+  }, []);
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -34,7 +42,7 @@ const ManageUsers = ({ show, currentUser }) => {
     }
     const user = { id: uid(), name, email, password, role: form.role, department, avatar: initials(name) };
     const updated = [...users, user];
-    DB.set("aiq_users", updated);
+    await DB.set("aiq_users", updated);
     setUsers(updated);
     setShowModal(false);
     setForm({ name: "", email: "", password: "", role: "employee", department: "" });
@@ -55,10 +63,10 @@ const ManageUsers = ({ show, currentUser }) => {
     }
   };
 
-  const del = (id) => {
-    // Removes a user account from local storage and UI state.
+  const del = async (id) => {
+    // Removes a user account from the shared database and UI state.
     const updated = users.filter((u) => u.id !== id);
-    DB.set("aiq_users", updated);
+    await DB.set("aiq_users", updated);
     setUsers(updated);
     setDelConfirm(null);
     show("User removed.", "info");
@@ -81,7 +89,11 @@ const ManageUsers = ({ show, currentUser }) => {
         </button>
       </div>
       <div className="card">
-        {users.length === 0 ? (
+        {loading ? (
+          <div className="empty-state">
+            <h3>Loading…</h3>
+          </div>
+        ) : users.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">👥</div>
             <h3>No users yet</h3>

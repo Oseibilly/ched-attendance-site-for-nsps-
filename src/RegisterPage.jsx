@@ -24,8 +24,8 @@ const RegisterPage = ({ onLogin, onSwitch }) => {
     if (form.password !== form.confirm) { setErr("Passwords do not match."); return; }
     if (form.password.length < 6) { setErr("Password must be at least 6 characters."); return; }
     setLoading(true);
-    setTimeout(() => {
-      const users = DB.get("aiq_users") || [];
+    setTimeout(async () => {
+      const users = (await DB.get("aiq_users")) || [];
       if (users.find((u) => u.email.toLowerCase() === email)) {
         setErr("Email already registered.");
         setLoading(false);
@@ -42,7 +42,7 @@ const RegisterPage = ({ onLogin, onSwitch }) => {
         department,
         avatar: initials(name),
       };
-      DB.set("aiq_users", [...users, user]);
+      await DB.set("aiq_users", [...users, user]);
       onLogin(user);
     }, 600);
   };

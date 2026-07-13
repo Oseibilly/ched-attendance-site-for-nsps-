@@ -1,12 +1,21 @@
+import { useState, useEffect } from "react";
 import { DB } from "./db";
 import { formatDate, formatTime } from "./helpers";
 
 // ─── Employee: My History ──────────────────────────────────────────────────
 // Employee-facing view of their own historical attendance records.
 const EmpHistory = ({ user }) => {
-  const logs = (DB.get("aiq_attendance") || [])
-    .filter((a) => a.userId === user.id)
-    .sort((a, b) => new Date(b.time) - new Date(a.time));
+  const [logs, setLogs] = useState([]);
+
+  useEffect(() => {
+    DB.get("aiq_attendance").then((a) => {
+      setLogs(
+        (a || [])
+          .filter((r) => r.userId === user.id)
+          .sort((x, y) => new Date(y.time) - new Date(x.time))
+      );
+    });
+  }, [user.id]);
 
   return (
     <div>
