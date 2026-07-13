@@ -27,6 +27,8 @@ const ManageUsers = ({ show, currentUser }) => {
   const [editUser, setEditUser] = useState(null);
   const [editForm, setEditForm] = useState(null);
   const [editErr, setEditErr] = useState("");
+  const [showAddPassword, setShowAddPassword] = useState(false);
+  const [showEditPassword, setShowEditPassword] = useState(false);
 
   const add = async () => {
     // Creates a new employee/admin record and updates persistent storage.
@@ -79,6 +81,7 @@ const ManageUsers = ({ show, currentUser }) => {
     setEditErr("");
     setEditForm({ name: u.name, email: u.email, password: u.password, role: u.role, department: u.department || "" });
     setEditUser(u);
+    setShowEditPassword(false);
   };
 
   const saveEdit = async () => {
@@ -230,18 +233,33 @@ const ManageUsers = ({ show, currentUser }) => {
             </div>
             <div className="form-group">
               <label className="form-label">Password</label>
-              <input
-                className="form-input"
-                type="password"
-                value={form.password}
-                onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
-                placeholder="Min 6 characters"
-              />
+              <div style={{ position: "relative" }}>
+                <input
+                  className="form-input"
+                  type={showAddPassword ? "text" : "password"}
+                  value={form.password}
+                  onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
+                  placeholder="Min 6 characters"
+                  style={{ paddingRight: 44 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowAddPassword((v) => !v)}
+                  aria-label={showAddPassword ? "Hide password" : "Show password"}
+                  style={{
+                    position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
+                    background: "none", border: "none", cursor: "pointer", fontSize: 16,
+                    color: "var(--brown-500)", padding: 4, lineHeight: 1,
+                  }}
+                >
+                  {showAddPassword ? "🙈" : "👁"}
+                </button>
+              </div>
             </div>
             <div className="modal-actions">
               <button
                 className="btn btn-ghost"
-                onClick={() => { setShowModal(false); setErr(""); }}
+                onClick={() => { setShowModal(false); setErr(""); setShowAddPassword(false); }}
               >
                 Cancel
               </button>
@@ -299,12 +317,27 @@ const ManageUsers = ({ show, currentUser }) => {
             </div>
             <div className="form-group">
               <label className="form-label">Password</label>
-              <input
-                className="form-input"
-                type="text"
-                value={editForm.password}
-                onChange={(e) => setEditForm((p) => ({ ...p, password: e.target.value }))}
-              />
+              <div style={{ position: "relative" }}>
+                <input
+                  className="form-input"
+                  type={showEditPassword ? "text" : "password"}
+                  value={editForm.password}
+                  onChange={(e) => setEditForm((p) => ({ ...p, password: e.target.value }))}
+                  style={{ paddingRight: 44 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowEditPassword((v) => !v)}
+                  aria-label={showEditPassword ? "Hide password" : "Show password"}
+                  style={{
+                    position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
+                    background: "none", border: "none", cursor: "pointer", fontSize: 16,
+                    color: "var(--brown-500)", padding: 4, lineHeight: 1,
+                  }}
+                >
+                  {showEditPassword ? "🙈" : "👁"}
+                </button>
+              </div>
             </div>
             <div className="modal-actions" style={{ justifyContent: "space-between" }}>
               {editUser.id !== currentUser.id ? (
