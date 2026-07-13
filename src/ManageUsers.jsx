@@ -15,14 +15,16 @@ const ManageUsers = ({ show, currentUser }) => {
   });
   const [err, setErr] = useState("");
   const [delConfirm, setDelConfirm] = useState(null);
+  const [sending, setSending] = useState(false);
 
-  const add = () => {
+  const add = async () => {
     // Creates a new employee/admin record and updates persistent storage.
     setErr("");
     const name = form.name.trim();
     const email = form.email.trim().toLowerCase();
+    const password = form.password;
     const department = form.department.trim();
-    if (!name || !email || !form.password) {
+    if (!name || !email || !password) {
       setErr("All fields required.");
       return;
     }
@@ -30,13 +32,27 @@ const ManageUsers = ({ show, currentUser }) => {
       setErr("Email already exists.");
       return;
     }
-    const user = { id: uid(), name, email, password: form.password, role: form.role, department, avatar: initials(name) };
+    const user = { id: uid(), name, email, password, role: form.role, department, avatar: initials(name) };
     const updated = [...users, user];
     DB.set("aiq_users", updated);
     setUsers(updated);
     setShowModal(false);
     setForm({ name: "", email: "", password: "", role: "employee", department: "" });
-    show("Employee added successfully.", "success");
+
+    setSending(true);
+    try {
+      const res = await fetch("/api/send-credentials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password }),
+      });
+      if (!res.ok) throw new Error();
+      show("Employee added and credentials emailed.", "success");
+    } catch {
+      show("Employee added, but the credentials email failed to send.", "error");
+    } finally {
+      setSending(false);
+    }
   };
 
   const del = (id) => {
