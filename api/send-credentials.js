@@ -36,6 +36,8 @@ An account has been created for you on CHED NSS Attendance Clock-In.
 Email: ${email}
 Password: ${password}
 
+Log in here: https://ched-attendance-site-for-nsps.vercel.app
+
 Please log in and consider changing your password after your first sign-in.
 
 - CHED NSS Attendance Clock-In`,
