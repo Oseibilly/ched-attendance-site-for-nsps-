@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { DB } from "./db";
-import { uid, initials, downloadCSV, parseCSV, toLocalDateStr } from "./helpers";
+import { uid, initials, downloadCSV, parseCSV, toLocalDateStr, isLate, formatDate, formatTime } from "./helpers";
 
 // ─── Admin: Manage Users ────────────────────────────────────────────────────
 const ManageUsers = ({ show, currentUser }) => {
   const [users, setUsers] = useState([]);
+  const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const fileInputRef = useRef(null);
@@ -17,11 +18,14 @@ const ManageUsers = ({ show, currentUser }) => {
   const [newBatchText, setNewBatchText] = useState("");
 
   useEffect(() => {
-    Promise.all([DB.get("aiq_users"), DB.get("aiq_active_batch")]).then(([u, b]) => {
-      setUsers(u || []);
-      setActiveBatch(b || "");
-      setLoading(false);
-    });
+    Promise.all([DB.get("aiq_users"), DB.get("aiq_active_batch"), DB.get("aiq_attendance")]).then(
+      ([u, b, a]) => {
+        setUsers(u || []);
+        setActiveBatch(b || "");
+        setLogs(a || []);
+        setLoading(false);
+      }
+    );
   }, []);
   const [form, setForm] = useState({
     name: "",
@@ -42,6 +46,7 @@ const ManageUsers = ({ show, currentUser }) => {
   const [resending, setResending] = useState(false);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
   const [bulkDeleteText, setBulkDeleteText] = useState("");
+  const [editTab, setEditTab] = useState("details");
 
   const add = async () => {
     // Creates a new employee/admin record and updates persistent storage.
@@ -99,6 +104,30 @@ const ManageUsers = ({ show, currentUser }) => {
     });
     setEditUser(u);
     setShowEditPassword(false);
+    setEditTab("details");
+  };
+
+  const exportUserLogs = (u) => {
+    const userLogs = logs
+      .filter((l) => l.userId === u.id)
+      .sort((a, b) => new Date(b.time) - new Date(a.time));
+    downloadCSV(
+      `attendance-${u.name.replace(/\s+/g, "-").toLowerCase()}-${toLocalDateStr(new Date())}.csv`,
+      ["Date", "Clock In", "Clock In Status", "Clock Out", "Clock Out Status", "Distance (m)", "Clock-Out Distance (m)"],
+      userLogs.map((l) => {
+        const todayStr = toLocalDateStr(new Date());
+        const missingClockOut = !l.clockOutTime && toLocalDateStr(l.time) !== todayStr;
+        return [
+          formatDate(l.time),
+          formatTime(l.time),
+          isLate(l.time) ? "Late" : "On Time",
+          l.clockOutTime ? formatTime(l.clockOutTime) : "",
+          l.clockOutTime ? "Recorded" : missingClockOut ? "Missing" : "Pending",
+          l.distance ?? "",
+          l.clockOutDistance ?? "",
+        ];
+      })
+    );
   };
 
   const saveEdit = async () => {
@@ -513,9 +542,29 @@ const ManageUsers = ({ show, currentUser }) => {
       {editUser && (
         <div className="modal-overlay">
           <div className="modal">
-            <div className="modal-title">Employee Details</div>
+            <div className="modal-title">{editUser.name}</div>
             <div className="modal-sub">View and update this team member's account.</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 20, borderBottom: "1px solid var(--brown-100)" }}>
+              {["details", "attendance"].map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setEditTab(tab)}
+                  style={{
+                    background: "none", border: "none", cursor: "pointer",
+                    padding: "8px 4px 12px", fontSize: 14, fontWeight: 600,
+                    color: editTab === tab ? "var(--brown-800)" : "var(--brown-400)",
+                    borderBottom: editTab === tab ? "2px solid var(--gold)" : "2px solid transparent",
+                    marginBottom: -1,
+                  }}
+                >
+                  {tab === "details" ? "Account Details" : `Attendance History (${logs.filter((l) => l.userId === editUser.id).length})`}
+                </button>
+              ))}
+            </div>
             {editErr && <div className="alert alert-error">{editErr}</div>}
+            {editTab === "details" && (
+            <>
             <div className="form-group">
               <label className="form-label">Full Name</label>
               <input
@@ -593,7 +642,71 @@ const ManageUsers = ({ show, currentUser }) => {
                 </button>
               </div>
             </div>
-            <div className="modal-actions" style={{ justifyContent: "space-between" }}>
+            </>
+            )}
+
+            {editTab === "attendance" && (() => {
+              const userLogs = logs
+                .filter((l) => l.userId === editUser.id)
+                .sort((a, b) => new Date(b.time) - new Date(a.time));
+              const lateCount = userLogs.filter((l) => isLate(l.time)).length;
+              const todayStr = toLocalDateStr(new Date());
+              const missingCount = userLogs.filter(
+                (l) => !l.clockOutTime && toLocalDateStr(l.time) !== todayStr
+              ).length;
+              return (
+                <div>
+                  <div style={{ display: "flex", gap: 24, marginBottom: 16, fontSize: 13, color: "var(--brown-500)" }}>
+                    <span><strong style={{ color: "var(--brown-800)" }}>{userLogs.length}</strong> total records</span>
+                    <span><strong style={{ color: "var(--brown-800)" }}>{lateCount}</strong> late</span>
+                    <span><strong style={{ color: "var(--brown-800)" }}>{missingCount}</strong> missing clock-out</span>
+                  </div>
+                  {userLogs.length === 0 ? (
+                    <div className="empty-state">
+                      <div className="empty-state-icon">📋</div>
+                      <h3>No records yet</h3>
+                    </div>
+                  ) : (
+                    <div style={{ maxHeight: 320, overflowY: "auto" }}>
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Date</th>
+                            <th>Clock In</th>
+                            <th>Clock Out</th>
+                            <th>Distance</th>
+                            <th>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {userLogs.map((l) => {
+                            const missingClockOut = !l.clockOutTime && toLocalDateStr(l.time) !== todayStr;
+                            return (
+                              <tr key={l.id}>
+                                <td>{formatDate(l.time)}</td>
+                                <td style={{ fontWeight: 500 }}>{formatTime(l.time)}</td>
+                                <td style={{ fontWeight: 500 }}>{l.clockOutTime ? formatTime(l.clockOutTime) : "—"}</td>
+                                <td>{l.distance != null ? `${l.distance}m` : "—"}</td>
+                                <td>
+                                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                    <span className={`badge ${isLate(l.time) ? "badge-warning" : "badge-success"}`}>
+                                      {isLate(l.time) ? "⏰ Late" : "✓ On Time"}
+                                    </span>
+                                    {missingClockOut && <span className="badge badge-error">⚠ No Clock-Out</span>}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            <div className="modal-actions" style={{ justifyContent: "space-between", marginTop: 20 }}>
               {editUser.id !== currentUser.id ? (
                 <button
                   className="btn btn-danger btn-sm"
@@ -603,15 +716,32 @@ const ManageUsers = ({ show, currentUser }) => {
                 </button>
               ) : <span />}
               <div style={{ display: "flex", gap: 12 }}>
-                <button className="btn btn-gold" onClick={resendCredentials} disabled={resending}>
-                  {resending ? "Sending…" : "✉ Resend Password"}
-                </button>
-                <button className="btn btn-ghost" onClick={() => setEditUser(null)}>
-                  Cancel
-                </button>
-                <button className="btn btn-primary" onClick={saveEdit}>
-                  Save Changes
-                </button>
+                {editTab === "details" ? (
+                  <>
+                    <button className="btn btn-gold" onClick={resendCredentials} disabled={resending}>
+                      {resending ? "Sending…" : "✉ Resend Password"}
+                    </button>
+                    <button className="btn btn-ghost" onClick={() => setEditUser(null)}>
+                      Cancel
+                    </button>
+                    <button className="btn btn-primary" onClick={saveEdit}>
+                      Save Changes
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      className="btn btn-gold"
+                      onClick={() => exportUserLogs(editUser)}
+                      disabled={logs.filter((l) => l.userId === editUser.id).length === 0}
+                    >
+                      📊 Export to Excel
+                    </button>
+                    <button className="btn btn-ghost" onClick={() => setEditUser(null)}>
+                      Close
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
