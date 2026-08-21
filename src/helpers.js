@@ -28,6 +28,37 @@ export const formatDate = (iso) => {
   });
 };
 
+/** Local YYYY-MM-DD for a Date or ISO string, avoiding UTC-parsing day shifts. */
+export const toLocalDateStr = (val) => {
+  const d = val instanceof Date ? val : new Date(val);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+const LATE_CUTOFF_MINUTES = 8 * 60 + 30; // 8:30am
+
+export const isLate = (iso) => {
+  const d = new Date(iso);
+  return d.getHours() * 60 + d.getMinutes() > LATE_CUTOFF_MINUTES;
+};
+
+/** Triggers a browser download of rows as a CSV file (opens directly in Excel). */
+export const downloadCSV = (filename, headers, rows) => {
+  const escape = (v) => {
+    const s = String(v ?? "");
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = [headers, ...rows].map((r) => r.map(escape).join(",")).join("\n");
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
 export const uid = () => Math.random().toString(36).slice(2, 10);
 
 export const initials = (name) =>

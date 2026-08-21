@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { DB } from "./db";
-import { formatDate, formatTime, initials } from "./helpers";
+import { formatDate, formatTime, initials, isLate, toLocalDateStr, downloadCSV } from "./helpers";
 
 // ─── Admin: Attendance Logs ────────────────────────────────────────────────
 const AttendanceLogs = () => {
@@ -10,6 +10,7 @@ const AttendanceLogs = () => {
   const [search, setSearch] = useState("");
   const [dateFilter, setDateFilter] = useState("");
   const [confirm, setConfirm] = useState(null);
+  const [rosterDate, setRosterDate] = useState(toLocalDateStr(new Date()));
 
   useEffect(() => {
     DB.get("aiq_attendance").then((a) => setLogs(a || []));
@@ -41,6 +42,63 @@ const AttendanceLogs = () => {
     (l) => new Date(l.time).toDateString() === new Date().toDateString()
   ).length;
   const empCount = users.filter((u) => u.role === "employee").length;
+  const todayStr = toLocalDateStr(new Date());
+
+  const exportLogs = () => {
+    downloadCSV(
+      `attendance-logs-${toLocalDateStr(new Date())}.csv`,
+      ["Employee", "Department", "Date", "Clock In", "Clock In Status", "Clock Out", "Clock Out Status", "Distance (m)", "Clock-Out Distance (m)"],
+      filtered.map((a) => {
+        const missingClockOut = !a.clockOutTime && toLocalDateStr(a.time) !== todayStr;
+        return [
+          a.userName,
+          a.department || "",
+          formatDate(a.time),
+          formatTime(a.time),
+          isLate(a.time) ? "Late" : "On Time",
+          a.clockOutTime ? formatTime(a.clockOutTime) : "",
+          a.clockOutTime ? "Recorded" : missingClockOut ? "Missing" : "Pending",
+          a.distance ?? "",
+          a.clockOutDistance ?? "",
+        ];
+      })
+    );
+  };
+
+  // Per-employee status for a single day, including employees who never
+  // clocked in at all — the raw log above only ever contains events that
+  // happened, so absences have to be derived by exclusion.
+  const roster = users
+    .filter((u) => u.role === "employee")
+    .map((u) => {
+      const record = logs.find(
+        (l) => l.userId === u.id && toLocalDateStr(l.time) === rosterDate
+      );
+      if (!record) {
+        return { user: u, record: null, status: "Absent" };
+      }
+      const late = isLate(record.time);
+      const missingClockOut = !record.clockOutTime && rosterDate !== todayStr;
+      let status = late ? "Late" : "On Time";
+      if (missingClockOut) status += " · No Clock-Out";
+      else if (!record.clockOutTime && rosterDate === todayStr) status += " · Clocked In";
+      return { user: u, record, status };
+    });
+
+  const exportRoster = () => {
+    downloadCSV(
+      `daily-roster-${rosterDate}.csv`,
+      ["Employee", "Department", "Date", "Status", "Clock In", "Clock Out"],
+      roster.map((r) => [
+        r.user.name,
+        r.user.department || "",
+        rosterDate,
+        r.status,
+        r.record ? formatTime(r.record.time) : "",
+        r.record?.clockOutTime ? formatTime(r.record.clockOutTime) : "",
+      ])
+    );
+  };
 
   return (
     <div>
@@ -97,6 +155,9 @@ const AttendanceLogs = () => {
               Clear filters
             </button>
           )}
+          <button className="btn btn-gold btn-sm" onClick={exportLogs} disabled={filtered.length === 0}>
+            📊 Export to Excel
+          </button>
         </div>
         {filtered.length === 0 ? (
           <div className="empty-state">
@@ -140,7 +201,14 @@ const AttendanceLogs = () => {
                   </td>
                   <td>{a.distance != null ? `${a.distance}m` : "—"}</td>
                   <td>
-                    <span className="badge badge-success">✓ Present</span>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <span className={`badge ${isLate(a.time) ? "badge-warning" : "badge-success"}`}>
+                        {isLate(a.time) ? "⏰ Late" : "✓ On Time"}
+                      </span>
+                      {!a.clockOutTime && toLocalDateStr(a.time) !== todayStr && (
+                        <span className="badge badge-error">⚠ No Clock-Out</span>
+                      )}
+                    </div>
                   </td>
                   <td>
                     <button
@@ -149,6 +217,84 @@ const AttendanceLogs = () => {
                     >
                       Delete
                     </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="card" style={{ marginTop: 24 }}>
+        <div
+          className="page-header"
+          style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 16 }}
+        >
+          <div>
+            <div className="card-title" style={{ marginBottom: 4 }}>Daily Roster</div>
+            <div style={{ fontSize: 13, color: "var(--brown-500)" }}>
+              Every employee's status for one day, including anyone who never clocked in.
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <input
+              className="filter-input"
+              type="date"
+              value={rosterDate}
+              onChange={(e) => setRosterDate(e.target.value)}
+            />
+            <button className="btn btn-gold btn-sm" onClick={exportRoster} disabled={roster.length === 0}>
+              📊 Export to Excel
+            </button>
+          </div>
+        </div>
+        {roster.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-icon">👥</div>
+            <h3>No employees yet</h3>
+          </div>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Department</th>
+                <th>Clock In</th>
+                <th>Clock Out</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {roster.map((r) => (
+                <tr key={r.user.id}>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div
+                        className="avatar avatar-sm"
+                        style={{ background: `linear-gradient(135deg, var(--brown-600), var(--brown-400))` }}
+                      >
+                        {initials(r.user.name)}
+                      </div>
+                      <span style={{ fontWeight: 500 }}>{r.user.name}</span>
+                    </div>
+                  </td>
+                  <td>{r.user.department || "—"}</td>
+                  <td style={{ fontWeight: 500 }}>{r.record ? formatTime(r.record.time) : "—"}</td>
+                  <td style={{ fontWeight: 500 }}>
+                    {r.record?.clockOutTime ? formatTime(r.record.clockOutTime) : "—"}
+                  </td>
+                  <td>
+                    <span
+                      className={`badge ${
+                        r.status === "Absent" || r.status.includes("No Clock-Out")
+                          ? "badge-error"
+                          : r.status.includes("Late")
+                          ? "badge-warning"
+                          : "badge-success"
+                      }`}
+                    >
+                      {r.status === "Absent" ? "✕ Absent" : r.status}
+                    </span>
                   </td>
                 </tr>
               ))}
