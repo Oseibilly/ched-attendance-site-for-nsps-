@@ -29,6 +29,7 @@ const ManageUsers = ({ show, currentUser }) => {
   const [editErr, setEditErr] = useState("");
   const [showAddPassword, setShowAddPassword] = useState(false);
   const [showEditPassword, setShowEditPassword] = useState(false);
+  const [resending, setResending] = useState(false);
 
   const add = async () => {
     // Creates a new employee/admin record and updates persistent storage.
@@ -107,6 +108,25 @@ const ManageUsers = ({ show, currentUser }) => {
     setUsers(updated);
     setEditUser(null);
     show("Employee updated successfully.", "success");
+  };
+
+  const resendCredentials = async () => {
+    // Re-emails the employee's currently saved login credentials, e.g. when
+    // they've forgotten their password.
+    setResending(true);
+    try {
+      const res = await fetch("/api/send-credentials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editUser.name, email: editUser.email, password: editUser.password }),
+      });
+      if (!res.ok) throw new Error();
+      show(`Credentials resent to ${editUser.email}.`, "success");
+    } catch {
+      show("Failed to resend the credentials email.", "error");
+    } finally {
+      setResending(false);
+    }
   };
 
   const avatarColors = ["#6B4226", "#8B5A35", "#A67C52", "#4A2E1A", "#C4A882"];
@@ -349,6 +369,9 @@ const ManageUsers = ({ show, currentUser }) => {
                 </button>
               ) : <span />}
               <div style={{ display: "flex", gap: 12 }}>
+                <button className="btn btn-gold" onClick={resendCredentials} disabled={resending}>
+                  {resending ? "Sending…" : "✉ Resend Password"}
+                </button>
                 <button className="btn btn-ghost" onClick={() => setEditUser(null)}>
                   Cancel
                 </button>
