@@ -34,6 +34,8 @@ const ManageUsers = ({ show, currentUser }) => {
   const [showAddPassword, setShowAddPassword] = useState(false);
   const [showEditPassword, setShowEditPassword] = useState(false);
   const [resending, setResending] = useState(false);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
+  const [bulkDeleteText, setBulkDeleteText] = useState("");
 
   const add = async () => {
     // Creates a new employee/admin record and updates persistent storage.
@@ -214,6 +216,21 @@ const ManageUsers = ({ show, currentUser }) => {
     setImporting(false);
   };
 
+  const employeeCount = users.filter((u) => u.role === "employee" && u.id !== currentUser.id).length;
+
+  const removeAllEmployees = async () => {
+    // Keeps admin accounts (and the current user, as a safety net) intact;
+    // attendance history is untouched since records store name/department
+    // directly rather than referencing the user account.
+    const updated = users.filter((u) => u.role !== "employee" || u.id === currentUser.id);
+    const removedCount = users.length - updated.length;
+    await DB.set("aiq_users", updated);
+    setUsers(updated);
+    setBulkDeleteConfirm(false);
+    setBulkDeleteText("");
+    show(`Removed ${removedCount} employee${removedCount === 1 ? "" : "s"}. Admin accounts were kept.`, "info");
+  };
+
   const avatarColors = ["#6B4226", "#8B5A35", "#A67C52", "#4A2E1A", "#C4A882"];
 
   return (
@@ -245,6 +262,23 @@ const ManageUsers = ({ show, currentUser }) => {
           </button>
         </div>
       </div>
+
+      {employeeCount > 0 && (
+        <div
+          style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            marginBottom: 20, padding: "12px 16px", borderRadius: 10,
+            background: "var(--error-light)", border: "1px solid rgba(200,60,60,0.2)",
+          }}
+        >
+          <span style={{ fontSize: 13, color: "var(--brown-500)" }}>
+            End of service year? Clear out this batch before importing the next one.
+          </span>
+          <button className="btn btn-danger btn-sm" onClick={() => setBulkDeleteConfirm(true)}>
+            🗑 Remove All Employees
+          </button>
+        </div>
+      )}
       <div className="card">
         {loading ? (
           <div className="empty-state">
@@ -497,6 +531,43 @@ const ManageUsers = ({ show, currentUser }) => {
               </button>
               <button className="btn btn-danger" onClick={() => del(delConfirm)}>
                 Remove User
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bulkDeleteConfirm && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-title">Remove All Employees?</div>
+            <div className="modal-sub">
+              This will permanently remove {employeeCount} employee account{employeeCount === 1 ? "" : "s"}.
+              Admin accounts are kept, and past attendance records are not affected — but export the Team
+              Members list first if you want a record of who's leaving before continuing.
+            </div>
+            <div className="form-group">
+              <label className="form-label">Type REMOVE ALL to confirm</label>
+              <input
+                className="form-input"
+                value={bulkDeleteText}
+                onChange={(e) => setBulkDeleteText(e.target.value)}
+                placeholder="REMOVE ALL"
+              />
+            </div>
+            <div className="modal-actions">
+              <button
+                className="btn btn-ghost"
+                onClick={() => { setBulkDeleteConfirm(false); setBulkDeleteText(""); }}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={removeAllEmployees}
+                disabled={bulkDeleteText !== "REMOVE ALL"}
+              >
+                Remove All Employees
               </button>
             </div>
           </div>
