@@ -1,12 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { DB } from "./db";
-import { uid, initials } from "./helpers";
+import { uid, initials, downloadCSV, parseCSV, toLocalDateStr } from "./helpers";
 
 // ─── Admin: Manage Users ────────────────────────────────────────────────────
 const ManageUsers = ({ show, currentUser }) => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const fileInputRef = useRef(null);
+  const [importPreview, setImportPreview] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [sendEmailsOnImport, setSendEmailsOnImport] = useState(true);
 
   useEffect(() => {
     DB.get("aiq_users").then((u) => {
@@ -129,6 +133,87 @@ const ManageUsers = ({ show, currentUser }) => {
     }
   };
 
+  const exportUsers = () => {
+    downloadCSV(
+      `employees-${toLocalDateStr(new Date())}.csv`,
+      ["Name", "Email", "Department", "Role", "Password"],
+      users.map((u) => [u.name, u.email, u.department || "", u.role, u.password])
+    );
+  };
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    e.target.value = ""; // allow re-selecting the same file
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result).replace(new RegExp("^" + String.fromCharCode(0xfeff)), "");
+      const rows = parseCSV(text).filter((r) => r.some((c) => c.trim() !== ""));
+      if (rows.length < 2) {
+        show("The file has no data rows.", "error");
+        return;
+      }
+      const headers = rows[0].map((h) => h.trim().toLowerCase());
+      const col = (name) => headers.indexOf(name);
+      const nameIdx = col("name"), emailIdx = col("email"), passwordIdx = col("password");
+      const departmentIdx = col("department"), roleIdx = col("role");
+      if (nameIdx === -1 || emailIdx === -1 || passwordIdx === -1) {
+        show("CSV must include Name, Email, and Password columns.", "error");
+        return;
+      }
+      const seenEmails = new Set(users.map((u) => u.email.toLowerCase()));
+      const valid = [];
+      let skipped = 0;
+      for (const row of rows.slice(1)) {
+        const name = (row[nameIdx] || "").trim();
+        const email = (row[emailIdx] || "").trim().toLowerCase();
+        const password = (row[passwordIdx] || "").trim();
+        const department = departmentIdx > -1 ? (row[departmentIdx] || "").trim() : "";
+        const role = roleIdx > -1 && (row[roleIdx] || "").trim().toLowerCase() === "admin" ? "admin" : "employee";
+        if (!name || !email || !password || seenEmails.has(email)) {
+          skipped++;
+          continue;
+        }
+        seenEmails.add(email);
+        valid.push({ name, email, password, department, role });
+      }
+      setImportPreview({ valid, skipped });
+    };
+    reader.readAsText(file);
+  };
+
+  const confirmImport = async () => {
+    setImporting(true);
+    const newUsers = importPreview.valid.map((u) => ({ ...u, id: uid(), avatar: initials(u.name) }));
+    const updated = [...users, ...newUsers];
+    await DB.set("aiq_users", updated);
+    setUsers(updated);
+
+    let emailFailures = 0;
+    if (sendEmailsOnImport) {
+      await Promise.all(
+        newUsers.map(async (u) => {
+          try {
+            const res = await fetch("/api/send-credentials", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name: u.name, email: u.email, password: u.password }),
+            });
+            if (!res.ok) emailFailures++;
+          } catch {
+            emailFailures++;
+          }
+        })
+      );
+    }
+
+    const skippedNote = importPreview.skipped ? ` ${importPreview.skipped} row(s) skipped.` : "";
+    const emailNote = sendEmailsOnImport && emailFailures ? ` ${emailFailures} credential email(s) failed to send.` : "";
+    show(`Imported ${newUsers.length} employee(s).${skippedNote}${emailNote}`, emailFailures ? "error" : "success");
+    setImportPreview(null);
+    setImporting(false);
+  };
+
   const avatarColors = ["#6B4226", "#8B5A35", "#A67C52", "#4A2E1A", "#C4A882"];
 
   return (
@@ -141,9 +226,24 @@ const ManageUsers = ({ show, currentUser }) => {
           <div className="page-title">Team Members</div>
           <div className="page-sub">Manage employee accounts and roles.</div>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-          + Add Employee
-        </button>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <button className="btn btn-gold" onClick={exportUsers} disabled={users.length === 0}>
+            📊 Export to Excel
+          </button>
+          <button className="btn btn-gold" onClick={() => fileInputRef.current.click()}>
+            📥 Import from Excel
+          </button>
+          <input
+            type="file"
+            accept=".csv"
+            ref={fileInputRef}
+            style={{ display: "none" }}
+            onChange={handleFileSelect}
+          />
+          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+            + Add Employee
+          </button>
+        </div>
       </div>
       <div className="card">
         {loading ? (
@@ -397,6 +497,54 @@ const ManageUsers = ({ show, currentUser }) => {
               </button>
               <button className="btn btn-danger" onClick={() => del(delConfirm)}>
                 Remove User
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {importPreview && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-title">Import Employees</div>
+            <div className="modal-sub">
+              {importPreview.valid.length} employee{importPreview.valid.length === 1 ? "" : "s"} will be added.
+              {importPreview.skipped > 0 &&
+                ` ${importPreview.skipped} row(s) skipped (missing fields or duplicate email).`}
+            </div>
+            {importPreview.valid.length > 0 && (
+              <div
+                style={{
+                  maxHeight: 200, overflowY: "auto", marginBottom: 20,
+                  fontSize: 13, color: "var(--brown-500)", border: "1px solid var(--brown-100)",
+                  borderRadius: 8, padding: "8px 12px",
+                }}
+              >
+                {importPreview.valid.map((u) => (
+                  <div key={u.email} style={{ padding: "4px 0" }}>
+                    {u.name} — {u.email} ({u.role})
+                  </div>
+                ))}
+              </div>
+            )}
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 20 }}>
+              <input
+                type="checkbox"
+                checked={sendEmailsOnImport}
+                onChange={(e) => setSendEmailsOnImport(e.target.checked)}
+              />
+              Email login credentials to each new employee
+            </label>
+            <div className="modal-actions">
+              <button className="btn btn-ghost" onClick={() => setImportPreview(null)}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={confirmImport}
+                disabled={importing || importPreview.valid.length === 0}
+              >
+                {importing ? "Importing…" : `Import ${importPreview.valid.length}`}
               </button>
             </div>
           </div>
