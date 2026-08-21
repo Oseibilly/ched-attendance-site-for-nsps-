@@ -31,6 +31,7 @@ const RegisterPage = ({ onLogin, onSwitch }) => {
         setLoading(false);
         return;
       }
+      const activeBatch = await DB.get("aiq_active_batch");
       const user = {
         id: uid(),
         name,
@@ -41,6 +42,7 @@ const RegisterPage = ({ onLogin, onSwitch }) => {
         role: "employee",
         department,
         avatar: initials(name),
+        batch: activeBatch,
       };
       await DB.set("aiq_users", [...users, user]);
       onLogin(user);

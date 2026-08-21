@@ -11,10 +11,15 @@ const ManageUsers = ({ show, currentUser }) => {
   const [importPreview, setImportPreview] = useState(null);
   const [importing, setImporting] = useState(false);
   const [sendEmailsOnImport, setSendEmailsOnImport] = useState(true);
+  const [activeBatch, setActiveBatch] = useState("");
+  const [viewBatch, setViewBatch] = useState("current");
+  const [newBatchModal, setNewBatchModal] = useState(false);
+  const [newBatchText, setNewBatchText] = useState("");
 
   useEffect(() => {
-    DB.get("aiq_users").then((u) => {
+    Promise.all([DB.get("aiq_users"), DB.get("aiq_active_batch")]).then(([u, b]) => {
       setUsers(u || []);
+      setActiveBatch(b || "");
       setLoading(false);
     });
   }, []);
@@ -24,6 +29,7 @@ const ManageUsers = ({ show, currentUser }) => {
     password: "",
     role: "employee",
     department: "",
+    batch: "",
   });
   const [err, setErr] = useState("");
   const [delConfirm, setDelConfirm] = useState(null);
@@ -52,12 +58,13 @@ const ManageUsers = ({ show, currentUser }) => {
       setErr("Email already exists.");
       return;
     }
-    const user = { id: uid(), name, email, password, role: form.role, department, avatar: initials(name) };
+    const batch = form.batch.trim() || activeBatch;
+    const user = { id: uid(), name, email, password, role: form.role, department, avatar: initials(name), batch };
     const updated = [...users, user];
     await DB.set("aiq_users", updated);
     setUsers(updated);
     setShowModal(false);
-    setForm({ name: "", email: "", password: "", role: "employee", department: "" });
+    setForm({ name: "", email: "", password: "", role: "employee", department: "", batch: "" });
 
     setSending(true);
     try {
@@ -86,7 +93,10 @@ const ManageUsers = ({ show, currentUser }) => {
 
   const openEdit = (u) => {
     setEditErr("");
-    setEditForm({ name: u.name, email: u.email, password: u.password, role: u.role, department: u.department || "" });
+    setEditForm({
+      name: u.name, email: u.email, password: u.password, role: u.role,
+      department: u.department || "", batch: u.batch || activeBatch,
+    });
     setEditUser(u);
     setShowEditPassword(false);
   };
@@ -105,9 +115,10 @@ const ManageUsers = ({ show, currentUser }) => {
       setEditErr("Email already exists.");
       return;
     }
+    const batch = editForm.batch.trim() || activeBatch;
     const updated = users.map((u) =>
       u.id === editUser.id
-        ? { ...u, name, email, password, role: editForm.role, department, avatar: initials(name) }
+        ? { ...u, name, email, password, role: editForm.role, department, avatar: initials(name), batch }
         : u
     );
     await DB.set("aiq_users", updated);
@@ -138,8 +149,8 @@ const ManageUsers = ({ show, currentUser }) => {
   const exportUsers = () => {
     downloadCSV(
       `employees-${toLocalDateStr(new Date())}.csv`,
-      ["Name", "Email", "Department", "Role", "Password"],
-      users.map((u) => [u.name, u.email, u.department || "", u.role, u.password])
+      ["Name", "Email", "Department", "Role", "Service Year", "Password"],
+      visibleUsers.map((u) => [u.name, u.email, u.department || "", u.role, u.batch || "", u.password])
     );
   };
 
@@ -159,6 +170,7 @@ const ManageUsers = ({ show, currentUser }) => {
       const col = (name) => headers.indexOf(name);
       const nameIdx = col("name"), emailIdx = col("email"), passwordIdx = col("password");
       const departmentIdx = col("department"), roleIdx = col("role");
+      const batchIdx = col("service year") > -1 ? col("service year") : col("batch");
       if (nameIdx === -1 || emailIdx === -1 || passwordIdx === -1) {
         show("CSV must include Name, Email, and Password columns.", "error");
         return;
@@ -172,12 +184,13 @@ const ManageUsers = ({ show, currentUser }) => {
         const password = (row[passwordIdx] || "").trim();
         const department = departmentIdx > -1 ? (row[departmentIdx] || "").trim() : "";
         const role = roleIdx > -1 && (row[roleIdx] || "").trim().toLowerCase() === "admin" ? "admin" : "employee";
+        const batch = (batchIdx > -1 ? (row[batchIdx] || "").trim() : "") || activeBatch;
         if (!name || !email || !password || seenEmails.has(email)) {
           skipped++;
           continue;
         }
         seenEmails.add(email);
-        valid.push({ name, email, password, department, role });
+        valid.push({ name, email, password, department, role, batch });
       }
       setImportPreview({ valid, skipped });
     };
@@ -218,6 +231,25 @@ const ManageUsers = ({ show, currentUser }) => {
 
   const employeeCount = users.filter((u) => u.role === "employee" && u.id !== currentUser.id).length;
 
+  const distinctBatches = [...new Set(users.map((u) => u.batch).filter(Boolean))].sort().reverse();
+  const targetBatch = viewBatch === "current" ? activeBatch : viewBatch;
+  const visibleUsers =
+    viewBatch === "all" ? users : users.filter((u) => (u.batch || activeBatch) === targetBatch);
+
+  const startNewServiceYear = async () => {
+    const name = newBatchText.trim();
+    if (!name) return;
+    await DB.set("aiq_active_batch", name);
+    setActiveBatch(name);
+    setViewBatch(name);
+    setNewBatchModal(false);
+    setNewBatchText("");
+    show(
+      `"${name}" is now the active service year. Past employees keep their records but can no longer log in — add or import the new intake to get started.`,
+      "success"
+    );
+  };
+
   const removeAllEmployees = async () => {
     // Keeps admin accounts (and the current user, as a safety net) intact;
     // attendance history is untouched since records store name/department
@@ -241,10 +273,12 @@ const ManageUsers = ({ show, currentUser }) => {
       >
         <div>
           <div className="page-title">Team Members</div>
-          <div className="page-sub">Manage employee accounts and roles.</div>
+          <div className="page-sub">
+            Manage employee accounts and roles. Current service year: <strong>{activeBatch}</strong>
+          </div>
         </div>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <button className="btn btn-gold" onClick={exportUsers} disabled={users.length === 0}>
+          <button className="btn btn-gold" onClick={exportUsers} disabled={visibleUsers.length === 0}>
             📊 Export to Excel
           </button>
           <button className="btn btn-gold" onClick={() => fileInputRef.current.click()}>
@@ -257,25 +291,57 @@ const ManageUsers = ({ show, currentUser }) => {
             style={{ display: "none" }}
             onChange={handleFileSelect}
           />
-          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+          <button
+            className="btn btn-primary"
+            onClick={() => { setForm((p) => ({ ...p, batch: activeBatch })); setShowModal(true); }}
+          >
             + Add Employee
           </button>
         </div>
       </div>
 
-      {employeeCount > 0 && (
-        <div
-          style={{
-            display: "flex", justifyContent: "space-between", alignItems: "center",
-            marginBottom: 20, padding: "12px 16px", borderRadius: 10,
-            background: "var(--error-light)", border: "1px solid rgba(200,60,60,0.2)",
-          }}
+      <div
+        style={{
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          marginBottom: 20, padding: "12px 16px", borderRadius: 10, flexWrap: "wrap", gap: 12,
+          background: "var(--brown-100)",
+        }}
+      >
+        <span style={{ fontSize: 13, color: "var(--brown-500)" }}>
+          End of service year? Starting a new one keeps every past employee's records — they just
+          won't be able to log in anymore, freeing you up to add the next intake.
+        </span>
+        <button
+          className="btn btn-gold btn-sm"
+          onClick={() => { setNewBatchText(""); setNewBatchModal(true); }}
         >
-          <span style={{ fontSize: 13, color: "var(--brown-500)" }}>
-            End of service year? Clear out this batch before importing the next one.
-          </span>
-          <button className="btn btn-danger btn-sm" onClick={() => setBulkDeleteConfirm(true)}>
-            🗑 Remove All Employees
+          🆕 Start New Service Year
+        </button>
+      </div>
+
+      <div className="filter-bar" style={{ marginBottom: 16 }}>
+        <span style={{ fontSize: 13, color: "var(--brown-500)" }}>Viewing:</span>
+        <select
+          className="filter-input"
+          value={viewBatch}
+          onChange={(e) => setViewBatch(e.target.value)}
+        >
+          <option value="current">Current Service Year ({activeBatch})</option>
+          <option value="all">All Service Years</option>
+          {distinctBatches.filter((b) => b !== activeBatch).map((b) => (
+            <option key={b} value={b}>{b}</option>
+          ))}
+        </select>
+      </div>
+
+      {employeeCount > 0 && (
+        <div style={{ textAlign: "right", marginBottom: 16 }}>
+          <button
+            className="btn btn-ghost btn-sm"
+            style={{ color: "var(--error)" }}
+            onClick={() => setBulkDeleteConfirm(true)}
+          >
+            🗑 Permanently delete all employee accounts instead
           </button>
         </div>
       )}
@@ -284,10 +350,10 @@ const ManageUsers = ({ show, currentUser }) => {
           <div className="empty-state">
             <h3>Loading…</h3>
           </div>
-        ) : users.length === 0 ? (
+        ) : visibleUsers.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">👥</div>
-            <h3>No users yet</h3>
+            <h3>No users in this view</h3>
           </div>
         ) : (
           <table className="data-table">
@@ -296,43 +362,53 @@ const ManageUsers = ({ show, currentUser }) => {
                 <th>Name</th>
                 <th>Email</th>
                 <th>Department</th>
+                <th>Service Year</th>
                 <th>Role</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {users.map((u, i) => (
-                <tr key={u.id} onClick={() => openEdit(u)} style={{ cursor: "pointer" }}>
-                  <td>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div
-                        className="avatar avatar-sm"
-                        style={{ background: avatarColors[i % avatarColors.length] }}
-                      >
-                        {initials(u.name)}
+              {visibleUsers.map((u, i) => {
+                const userBatch = u.batch || activeBatch;
+                const isCurrent = u.role === "admin" || userBatch === activeBatch;
+                return (
+                  <tr key={u.id} onClick={() => openEdit(u)} style={{ cursor: "pointer" }}>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div
+                          className="avatar avatar-sm"
+                          style={{ background: avatarColors[i % avatarColors.length] }}
+                        >
+                          {initials(u.name)}
+                        </div>
+                        <span style={{ fontWeight: 500 }}>{u.name}</span>
                       </div>
-                      <span style={{ fontWeight: 500 }}>{u.name}</span>
-                    </div>
-                  </td>
-                  <td style={{ color: "var(--brown-500)" }}>{u.email}</td>
-                  <td>{u.department || "—"}</td>
-                  <td>
-                    <span className={`badge ${u.role === "admin" ? "badge-warning" : "badge-neutral"}`}>
-                      {u.role}
-                    </span>
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    {u.id !== currentUser.id && (
-                      <button
-                        className="btn btn-danger btn-sm"
-                        onClick={() => setDelConfirm(u.id)}
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td style={{ color: "var(--brown-500)" }}>{u.email}</td>
+                    <td>{u.department || "—"}</td>
+                    <td>
+                      <span className={`badge ${isCurrent ? "badge-success" : "badge-neutral"}`}>
+                        {userBatch}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`badge ${u.role === "admin" ? "badge-warning" : "badge-neutral"}`}>
+                        {u.role}
+                      </span>
+                    </td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      {u.id !== currentUser.id && (
+                        <button
+                          className="btn btn-danger btn-sm"
+                          onClick={() => setDelConfirm(u.id)}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -384,6 +460,15 @@ const ManageUsers = ({ show, currentUser }) => {
                   <option value="admin">Admin</option>
                 </select>
               </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Service Year</label>
+              <input
+                className="form-input"
+                value={form.batch}
+                onChange={(e) => setForm((p) => ({ ...p, batch: e.target.value }))}
+                placeholder={activeBatch}
+              />
             </div>
             <div className="form-group">
               <label className="form-label">Password</label>
@@ -470,6 +555,21 @@ const ManageUsers = ({ show, currentUser }) => {
               </div>
             </div>
             <div className="form-group">
+              <label className="form-label">
+                Service Year
+                {editForm.role === "admin" || editForm.batch === activeBatch ? (
+                  <span className="badge badge-success" style={{ marginLeft: 8 }}>Current</span>
+                ) : (
+                  <span className="badge badge-neutral" style={{ marginLeft: 8 }}>Past — can't log in</span>
+                )}
+              </label>
+              <input
+                className="form-input"
+                value={editForm.batch}
+                onChange={(e) => setEditForm((p) => ({ ...p, batch: e.target.value }))}
+              />
+            </div>
+            <div className="form-group">
               <label className="form-label">Password</label>
               <div style={{ position: "relative" }}>
                 <input
@@ -537,14 +637,53 @@ const ManageUsers = ({ show, currentUser }) => {
         </div>
       )}
 
+      {newBatchModal && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-title">Start New Service Year</div>
+            <div className="modal-sub">
+              Everyone in <strong>{activeBatch}</strong> keeps their account and attendance history, but
+              won't be able to log in once this switches. New employees you add or import will join the
+              new service year by default.
+            </div>
+            <div className="form-group">
+              <label className="form-label">New Service Year Name</label>
+              <input
+                className="form-input"
+                value={newBatchText}
+                onChange={(e) => setNewBatchText(e.target.value)}
+                placeholder="e.g. 2026/2027"
+              />
+            </div>
+            <div className="modal-actions">
+              <button
+                className="btn btn-ghost"
+                onClick={() => { setNewBatchModal(false); setNewBatchText(""); }}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={startNewServiceYear}
+                disabled={!newBatchText.trim()}
+              >
+                Start "{newBatchText.trim() || "…"}"
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {bulkDeleteConfirm && (
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-title">Remove All Employees?</div>
             <div className="modal-sub">
-              This will permanently remove {employeeCount} employee account{employeeCount === 1 ? "" : "s"}.
-              Admin accounts are kept, and past attendance records are not affected — but export the Team
-              Members list first if you want a record of who's leaving before continuing.
+              This will permanently delete {employeeCount} employee account{employeeCount === 1 ? "" : "s"}
+              and cannot be undone. Admin accounts are kept, and past attendance records are not deleted
+              with them — but if you just want to lock last year's group out without losing their records,
+              use "Start New Service Year" instead. Export the Team Members list first if you want a backup
+              before continuing.
             </div>
             <div className="form-group">
               <label className="form-label">Type REMOVE ALL to confirm</label>
@@ -593,7 +732,7 @@ const ManageUsers = ({ show, currentUser }) => {
               >
                 {importPreview.valid.map((u) => (
                   <div key={u.email} style={{ padding: "4px 0" }}>
-                    {u.name} — {u.email} ({u.role})
+                    {u.name} — {u.email} ({u.role}, {u.batch})
                   </div>
                 ))}
               </div>

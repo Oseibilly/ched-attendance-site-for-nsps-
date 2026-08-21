@@ -9,25 +9,31 @@ const AttendanceLogs = () => {
   const [location, setLocation] = useState(null);
   const [search, setSearch] = useState("");
   const [dateFilter, setDateFilter] = useState("");
+  const [batchFilter, setBatchFilter] = useState("all");
   const [confirm, setConfirm] = useState(null);
   const [rosterDate, setRosterDate] = useState(toLocalDateStr(new Date()));
+  const [activeBatch, setActiveBatch] = useState("");
 
   useEffect(() => {
     DB.get("aiq_attendance").then((a) => setLogs(a || []));
     DB.get("aiq_users").then((u) => setUsers(u || []));
     DB.get("aiq_location").then(setLocation);
+    DB.get("aiq_active_batch").then((b) => setActiveBatch(b || ""));
   }, []);
+
+  const distinctBatches = [...new Set(logs.map((l) => l.batch).filter(Boolean))].sort().reverse();
 
   const filtered = logs
     .filter((l) => {
-      // Applies search + date filters, then sorts newest entries first.
+      // Applies search + date + batch filters, then sorts newest entries first.
       const matchName =
         l.userName?.toLowerCase().includes(search.toLowerCase()) ||
         l.department?.toLowerCase().includes(search.toLowerCase());
       const matchDate = dateFilter
         ? new Date(l.time).toDateString() === new Date(dateFilter).toDateString()
         : true;
-      return matchName && matchDate;
+      const matchBatch = batchFilter === "all" ? true : (l.batch || "") === batchFilter;
+      return matchName && matchDate && matchBatch;
     })
     .sort((a, b) => new Date(b.time) - new Date(a.time));
 
@@ -41,18 +47,19 @@ const AttendanceLogs = () => {
   const todayCount = logs.filter(
     (l) => new Date(l.time).toDateString() === new Date().toDateString()
   ).length;
-  const empCount = users.filter((u) => u.role === "employee").length;
+  const empCount = users.filter((u) => u.role === "employee" && (u.batch || activeBatch) === activeBatch).length;
   const todayStr = toLocalDateStr(new Date());
 
   const exportLogs = () => {
     downloadCSV(
       `attendance-logs-${toLocalDateStr(new Date())}.csv`,
-      ["Employee", "Department", "Date", "Clock In", "Clock In Status", "Clock Out", "Clock Out Status", "Distance (m)", "Clock-Out Distance (m)"],
+      ["Employee", "Department", "Service Year", "Date", "Clock In", "Clock In Status", "Clock Out", "Clock Out Status", "Distance (m)", "Clock-Out Distance (m)"],
       filtered.map((a) => {
         const missingClockOut = !a.clockOutTime && toLocalDateStr(a.time) !== todayStr;
         return [
           a.userName,
           a.department || "",
+          a.batch || "",
           formatDate(a.time),
           formatTime(a.time),
           isLate(a.time) ? "Late" : "On Time",
@@ -67,9 +74,10 @@ const AttendanceLogs = () => {
 
   // Per-employee status for a single day, including employees who never
   // clocked in at all — the raw log above only ever contains events that
-  // happened, so absences have to be derived by exclusion.
+  // happened, so absences have to be derived by exclusion. Scoped to the
+  // current service year, since past batches aren't expected to clock in.
   const roster = users
-    .filter((u) => u.role === "employee")
+    .filter((u) => u.role === "employee" && (u.batch || activeBatch) === activeBatch)
     .map((u) => {
       const record = logs.find(
         (l) => l.userId === u.id && toLocalDateStr(l.time) === rosterDate
@@ -147,10 +155,22 @@ const AttendanceLogs = () => {
             value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value)}
           />
-          {(search || dateFilter) && (
+          {distinctBatches.length > 0 && (
+            <select
+              className="filter-input"
+              value={batchFilter}
+              onChange={(e) => setBatchFilter(e.target.value)}
+            >
+              <option value="all">All Service Years</option>
+              {distinctBatches.map((b) => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
+          )}
+          {(search || dateFilter || batchFilter !== "all") && (
             <button
               className="btn btn-ghost btn-sm"
-              onClick={() => { setSearch(""); setDateFilter(""); }}
+              onClick={() => { setSearch(""); setDateFilter(""); setBatchFilter("all"); }}
             >
               Clear filters
             </button>

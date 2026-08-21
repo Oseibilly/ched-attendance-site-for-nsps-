@@ -18,11 +18,21 @@ const LoginPage = ({ onLogin, onSwitch }) => {
       const user = users.find(
         (u) => u.email.toLowerCase() === email && u.password === form.password
       );
-      if (user) {
-        onLogin(user);
-      } else {
+      if (!user) {
         setErr("Invalid email or password.");
+        setLoading(false);
+        return;
       }
+      // Admins are exempt from batch gating; employees from a past service
+      // year keep their records but can no longer log in once a new batch
+      // becomes active.
+      const activeBatch = await DB.get("aiq_active_batch");
+      if (user.role !== "admin" && user.batch !== activeBatch) {
+        setErr("Your service year has ended. Contact your administrator.");
+        setLoading(false);
+        return;
+      }
+      onLogin(user);
       setLoading(false);
     }, 600);
   };

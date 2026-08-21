@@ -16,19 +16,24 @@ const AdminDashboard = () => {
   const [users, setUsers] = useState([]);
   // Single saved workplace GPS/config blob; required before employees can clock in.
   const [loc, setLoc] = useState(null);
+  const [activeBatch, setActiveBatch] = useState("");
 
   useEffect(() => {
     DB.get("aiq_attendance").then((a) => setLogs(a || []));
     DB.get("aiq_users").then((u) => setUsers(u || []));
     DB.get("aiq_location").then(setLoc);
+    DB.get("aiq_active_batch").then((b) => setActiveBatch(b || ""));
   }, []);
 
   // Keep only logs whose timestamp falls on today’s calendar date (local timezone).
   const todayLogs = logs.filter(
     (l) => new Date(l.time).toDateString() === new Date().toDateString()
   );
-  // Number of users with role "employee" (excludes admins from the headcount).
-  const empCount = users.filter((u) => u.role === "employee").length;
+  // Number of users with role "employee" in the current service year (excludes
+  // admins and past batches, who can no longer log in, from the headcount).
+  const empCount = users.filter(
+    (u) => u.role === "employee" && (u.batch || activeBatch) === activeBatch
+  ).length;
   // Current time for the subtitle; re-renders periodically via useClock().
   const now = useClock();
 

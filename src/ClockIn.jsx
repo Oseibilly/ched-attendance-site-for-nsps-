@@ -60,6 +60,7 @@ const ClockIn = ({ user, show }) => {
       userId: user.id,
       userName: user.name,
       department: user.department,
+      batch: user.batch,
       time: new Date().toISOString(),
       lat: gps.lat,
       lng: gps.lng,

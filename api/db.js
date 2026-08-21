@@ -1,7 +1,7 @@
 import pg from "pg";
 const { Pool } = pg;
 
-const ALLOWED_KEYS = new Set(["aiq_users", "aiq_attendance", "aiq_location"]);
+const ALLOWED_KEYS = new Set(["aiq_users", "aiq_attendance", "aiq_location", "aiq_active_batch"]);
 
 const connectionString =
   process.env.POSTGRES_URL ||
