@@ -57,11 +57,29 @@ const LocationSetup = ({ show }) => {
         show("Location captured.", "success");
       },
       () => {
-        show("Could not get GPS location.", "error");
-        setGpsLoading(false);
+        show("Could not get GPS location. Trying an approximate location instead…", "error");
+        captureApproximate();
       },
       { enableHighAccuracy: true }
     );
+  };
+
+  const captureApproximate = async () => {
+    // Last-resort fallback when device GPS is unavailable (e.g. indoors,
+    // permission denied). IP-based only, so accuracy is city-level at best —
+    // verify on the map link below before saving.
+    try {
+      const res = await fetch("/api/geolocate", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Lookup failed");
+      setPending({ lat: data.lat, lng: data.lng });
+      setAccuracy(data.accuracy);
+      show("Approximate location captured — please verify it on the map before saving.", "info");
+    } catch {
+      show("Could not determine an approximate location either.", "error");
+    } finally {
+      setGpsLoading(false);
+    }
   };
 
   const save = async () => {
@@ -142,8 +160,13 @@ const LocationSetup = ({ show }) => {
                 </span>
                 <span style={{ fontSize: 12, color: "var(--brown-500)" }}>
                   Radius: {radius}m
-                  {accuracy != null && ` · GPS accuracy: ±${accuracy}m`}
+                  {accuracy != null && ` · location accuracy: ±${accuracy}m`}
                 </span>
+                {accuracy != null && accuracy > 1000 && (
+                  <span style={{ fontSize: 12, color: "var(--danger, #c0392b)" }}>
+                    ⚠ Approximate (IP-based) location — verify on the map below before saving.
+                  </span>
+                )}
                 <a
                   href={`https://www.google.com/maps?q=${pending.lat},${pending.lng}`}
                   target="_blank"
