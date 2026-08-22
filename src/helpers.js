@@ -89,6 +89,15 @@ export const parseCSV = (text) => {
   return rows;
 };
 
+/** Generates a password from a person's first name plus a random 4-digit number. */
+export const generatePassword = (name) => {
+  const first = (name || "").trim().split(/\s+/)[0]?.replace(/[^a-zA-Z]/g, "") || "User";
+  const base = first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+  let password = `${base}${Math.floor(1000 + Math.random() * 9000)}`;
+  while (password.length < 6) password += Math.floor(Math.random() * 10);
+  return password;
+};
+
 export const uid = () => Math.random().toString(36).slice(2, 10);
 
 export const initials = (name) =>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { DB } from "./db";
-import { uid, initials, downloadCSV, parseCSV, toLocalDateStr, isLate, formatDate, formatTime } from "./helpers";
+import { uid, initials, downloadCSV, parseCSV, toLocalDateStr, isLate, formatDate, formatTime, generatePassword } from "./helpers";
 
 // ─── Admin: Manage Users ────────────────────────────────────────────────────
 const ManageUsers = ({ show, currentUser }) => {
@@ -200,8 +200,8 @@ const ManageUsers = ({ show, currentUser }) => {
       const nameIdx = col("name"), emailIdx = col("email"), passwordIdx = col("password");
       const departmentIdx = col("department"), roleIdx = col("role");
       const batchIdx = col("service year") > -1 ? col("service year") : col("batch");
-      if (nameIdx === -1 || emailIdx === -1 || passwordIdx === -1) {
-        show("CSV must include Name, Email, and Password columns.", "error");
+      if (nameIdx === -1 || emailIdx === -1) {
+        show("CSV must include Name and Email columns.", "error");
         return;
       }
       const seenEmails = new Set(users.map((u) => u.email.toLowerCase()));
@@ -210,16 +210,17 @@ const ManageUsers = ({ show, currentUser }) => {
       for (const row of rows.slice(1)) {
         const name = (row[nameIdx] || "").trim();
         const email = (row[emailIdx] || "").trim().toLowerCase();
-        const password = (row[passwordIdx] || "").trim();
+        const providedPassword = passwordIdx > -1 ? (row[passwordIdx] || "").trim() : "";
         const department = departmentIdx > -1 ? (row[departmentIdx] || "").trim() : "";
         const role = roleIdx > -1 && (row[roleIdx] || "").trim().toLowerCase() === "admin" ? "admin" : "employee";
         const batch = (batchIdx > -1 ? (row[batchIdx] || "").trim() : "") || activeBatch;
-        if (!name || !email || !password || seenEmails.has(email)) {
+        if (!name || !email || seenEmails.has(email)) {
           skipped++;
           continue;
         }
         seenEmails.add(email);
-        valid.push({ name, email, password, department, role, batch });
+        const password = providedPassword || generatePassword(name);
+        valid.push({ name, email, password, department, role, batch, generated: !providedPassword });
       }
       setImportPreview({ valid, skipped });
     };
@@ -523,6 +524,16 @@ const ManageUsers = ({ show, currentUser }) => {
                   {showAddPassword ? "🙈" : "👁"}
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={() => { setForm((p) => ({ ...p, password: generatePassword(form.name) })); setShowAddPassword(true); }}
+                style={{
+                  background: "none", border: "none", cursor: "pointer", padding: 0,
+                  marginTop: 6, fontSize: 12, color: "var(--brown-500)", textDecoration: "underline",
+                }}
+              >
+                🎲 Generate from name
+              </button>
             </div>
             <div className="modal-actions">
               <button
@@ -862,7 +873,8 @@ const ManageUsers = ({ show, currentUser }) => {
               >
                 {importPreview.valid.map((u) => (
                   <div key={u.email} style={{ padding: "4px 0" }}>
-                    {u.name} — {u.email} ({u.role}, {u.batch})
+                    {u.name} — {u.email} ({u.role}, {u.batch}) · Password: <strong>{u.password}</strong>
+                    {u.generated && " (auto-generated)"}
                   </div>
                 ))}
               </div>
